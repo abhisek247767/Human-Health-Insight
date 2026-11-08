@@ -1,12 +1,19 @@
-import './App.css'
+import { BrowserRouter, Routes, Route } from "react-router";
+import { Header } from "./components/Header";
+import { ProtectedRoute } from "./auth/ProtectedRoute";
+import Home from "./pages/Home";
+import Dashboard from "./pages/Dashboard";
+import Admin from "./pages/Admin";
 
-function App() {
-
+export default function App() {
   return (
-    <>
-      Hi
-    </>
-  )
+    <BrowserRouter>
+      <Header />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute role="admin"><Admin /></ProtectedRoute>} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
-
-export default App

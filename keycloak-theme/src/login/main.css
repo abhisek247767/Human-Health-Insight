@@ -1,0 +1,138 @@
+/* HHI login theme — overrides on top of Keycloak's default CSS.
+   Change the variables below to restyle every page. */
+:root {
+  --hhi-primary: #0f766e;
+  --hhi-primary-dark: #115e59;
+  --hhi-bg-start: #0f766e;
+  --hhi-bg-end: #0e7490;
+  --hhi-page-bg: #f1f5f9;
+  --hhi-text: #0f172a;
+  --hhi-muted: #64748b;
+  --hhi-radius: 10px;
+}
+
+/* Page background (replaces Keycloak's default background image) */
+body.kcBodyClass {
+  background: var(--hhi-page-bg) !important;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---------- Split layout: illustration left, form right ---------- */
+.hhi-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100vh;
+  padding: 0 !important;
+}
+
+/* Left panel */
+.hhi-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px;
+  color: #fff;
+  text-align: center;
+  background: linear-gradient(135deg, var(--hhi-bg-start), var(--hhi-bg-end));
+}
+.hhi-hero-img {
+  width: 100%;
+  max-width: 460px;
+  height: auto;
+}
+.hhi-hero-title {
+  margin: 8px 0 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+}
+.hhi-hero-text {
+  margin: 0;
+  max-width: 360px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Right panel: centres the header + card */
+.hhi-form-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+/* App name above the card */
+.kcHeaderWrapperClass {
+  color: var(--hhi-text) !important;
+  font-size: 26px !important;
+  font-weight: 700;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  padding: 0 0 20px;
+}
+
+/* The white login card */
+.kcFormCardClass {
+  width: 100%;
+  max-width: 440px;
+  margin: 0 !important;
+  border-top: 0 !important;
+  border-radius: 16px;
+  padding: 32px 40px !important;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.1);
+}
+
+/* Page title ("Sign in to your account") */
+#kc-page-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--hhi-text);
+}
+
+/* Inputs */
+.kcInputClass {
+  height: 44px;
+  border-radius: var(--hhi-radius) !important;
+}
+
+/* Primary button (Sign In / Register) */
+.kcButtonPrimaryClass {
+  height: 44px;
+  border-radius: var(--hhi-radius) !important;
+  background-color: var(--hhi-primary) !important;
+  border-color: var(--hhi-primary) !important;
+  font-weight: 600;
+}
+.kcButtonPrimaryClass:hover {
+  background-color: var(--hhi-primary-dark) !important;
+}
+
+/* Links (Forgot password, Register) */
+.kcFormCardClass a {
+  color: var(--hhi-primary);
+}
+
+/* ---------- Tablet & phone: form only ---------- */
+@media (max-width: 900px) {
+  .hhi-split {
+    grid-template-columns: 1fr;
+  }
+  .hhi-hero {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .hhi-form-side {
+    padding: 24px 0;
+  }
+  .kcFormCardClass {
+    padding: 24px 16px !important;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

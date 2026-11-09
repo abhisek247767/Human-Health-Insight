@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 420" fill="none">
+  <style>
+    .scan { animation: scan 2.6s ease-in-out infinite alternate; }
+    .pulse { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 3s ease-in-out infinite; }
+    .beat { transform-origin: 26px 36px; animation: beat 1.1s ease-in-out infinite; }
+    @keyframes scan { from { transform: translateY(-40px); } to { transform: translateY(40px); } }
+    @keyframes draw { 0% { stroke-dashoffset: 600; } 60%, 100% { stroke-dashoffset: 0; } }
+    @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.15); } 30% { transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) {
+      .scan, .beat { animation: none; }
+      .pulse { animation: none; stroke-dashoffset: 0; }
+    }
+  </style>
+
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- backdrop rings -->
+  <circle cx="240" cy="200" r="175" fill="#ffffff" opacity="0.07"/>
+  <circle cx="240" cy="200" r="125" fill="#ffffff" opacity="0.08"/>
+
+  <!-- medical plus decorations -->
+  <path d="M64 84h16M72 76v16" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+  <path d="M412 316h12M418 310v12" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+  <path d="M404 64h10M409 59v10" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- tablet -->
+  <g filter="url(#shadow)">
+    <rect x="150" y="66" width="180" height="246" rx="24" fill="#ffffff"/>
+  </g>
+  <circle cx="240" cy="79" r="3.5" fill="#94a3b8"/>
+  <rect x="164" y="92" width="152" height="198" rx="14" fill="#ccfbf1"/>
+
+  <!-- person silhouette -->
+  <circle cx="240" cy="160" r="32" fill="#0f766e" opacity="0.85"/>
+  <path d="M184 290c0-50 112-50 112 0z" fill="#0f766e" opacity="0.85"/>
+
+  <!-- face-scan brackets -->
+  <g stroke="#0f766e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M198 130v-14h14"/>
+    <path d="M268 116h14v14"/>
+    <path d="M282 194v14h-14"/>
+    <path d="M212 208h-14v-14"/>
+  </g>
+
+  <!-- moving scan line -->
+  <g class="scan">
+    <rect x="200" y="160" width="80" height="2.5" rx="1.25" fill="#14b8a6"/>
+    <rect x="200" y="156" width="80" height="10" rx="5" fill="#14b8a6" opacity="0.15"/>
+  </g>
+
+  <!-- heart-rate card -->
+  <g transform="translate(36 236)">
+    <g filter="url(#shadow)">
+      <rect width="156" height="80" rx="16" fill="#ffffff"/>
+    </g>
+    <g class="beat">
+      <path transform="translate(14 24)" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z" fill="#f43f5e"/>
+    </g>
+    <text x="50" y="33" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12" fill="#64748b">Heart rate</text>
+    <text x="50" y="58" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">72 <tspan font-size="12" font-weight="500" fill="#64748b">bpm</tspan></text>
+  </g>
+
+  <!-- breathing card -->
+  <g transform="translate(298 112)">
+    <g filter="url(#shadow)">
+      <rect width="150" height="80" rx="16" fill="#ffffff"/>
+    </g>
+    <path transform="translate(14 28)" d="M1 12c3 0 3-7 6-7s3 14 6 14 3-7 6-7 3 0 4 0" stroke="#0ea5e9" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="48" y="33" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="12" fill="#64748b">Breathing</text>
+    <text x="48" y="58" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="20" font-weight="700" fill="#0f172a">16 <tspan font-size="12" font-weight="500" fill="#64748b">/min</tspan></text>
+  </g>
+
+  <!-- ECG pulse line -->
+  <path class="pulse" d="M20 372h140l12-22 14 46 14-60 14 50 10-14h236" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+</svg>

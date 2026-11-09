@@ -107,6 +107,89 @@
 
 ---
 
+## Phase 1.5 — Custom login UI with Keycloakify
+
+**Goal:** make Keycloak's login, register and forgot-password pages look like our React app, built with React + TypeScript.
+
+### Why Keycloakify (and why not a login form inside our React app)
+- Keycloakify builds a **real Keycloak theme** (a `.jar`). The pages are still served by Keycloak, and the form still posts straight to Keycloak.
+  → Passwords never touch our React app or our Node API. Brute-force protection, MFA, email verification and password reset keep working unchanged. **No security downgrade.**
+- The alternative, a login form inside our React app that sends the password to Keycloak (the "password grant"), is **deprecated in OAuth 2.1** and breaks MFA and SSO. **Not doing that.**
+- Compared with a plain CSS theme: we get full layout control, React components, Storybook previews and TypeScript.
+
+### Trade-offs (acceptable)
+| Concern | Handling |
+|---|---|
+| Building the `.jar` needs **Java 17+ and Maven** | Java 21 ✅ installed · Maven ❌ **must be installed** (`sudo apt install maven`) |
+| A separate build and deploy step for theme changes | Storybook and `npx keycloakify start-keycloak` give fast feedback; build the jar only when done |
+| Must stay compatible with Keycloak upgrades | Pin the `keycloakify` version; rebuild and retest the theme on each Keycloak upgrade |
+| About 30 Keycloak login pages exist | Customise only the ones we use (see K5); the rest inherit the shared `Template` styling |
+
+### Project layout
+```
+Human-Health-Insight/
+├── Frontend/          # main React app (unchanged)
+├── backend/
+├── keycloak-theme/    # NEW — Keycloakify project (separate Vite app)
+│   ├── src/login/     # login pages (React)
+│   └── dist_keycloak/ # build output: the .jar (git-ignored)
+└── infra/keycloak/    # docker-compose mounts the .jar from here
+```
+The theme is a **separate project** (not inside `Frontend/`), so the app's build and the theme's build stay independent.
+
+### Steps
+**K1. Prerequisites**
+- Node 22 ✅, Java 21 ✅, Docker ✅, **Maven: install** → `mvn -v` works.
+
+**K2. Scaffold the theme project**
+- Copy the official `keycloakify-starter` template into `keycloak-theme/`, remove its `.git` folder, and run `npm install`.
+- Pin `keycloakify` (currently 11.x) in `package.json`.
+
+**K3. Configure**
+- In `keycloak-theme/vite.config.ts`, set the keycloakify plugin options:
+  - `themeName: "hhi"`
+  - `accountThemeImplementation: "none"` (keep Keycloak's default account console for now)
+- Add `dist_keycloak/` to `.gitignore`.
+
+**K4. Shared look and feel**
+- Define the colour, spacing and font tokens once, and use the same values in `Frontend/` and `keycloak-theme/`.
+- **Self-host fonts and assets.** No CDNs, analytics or third-party scripts on login pages.
+- Drop Keycloak's default PatternFly CSS (`doUseDefaultCss: false`) once our own styles cover the pages.
+
+**K5. Pages to customise** (eject with `npx keycloakify eject-page`)
+| Page | Why |
+|---|---|
+| `Template.tsx` | Shared layout: logo, background, card, footer. Restyles every page at once |
+| `Login.tsx` | Sign in |
+| `Register.tsx` | Self-registration is ON |
+| `LoginResetPassword.tsx` / `LoginUpdatePassword.tsx` | Forgot password flow |
+| `Error.tsx` / `Info.tsx` | Error and info messages |
+| `LoginVerifyEmail.tsx`, `LoginOtp.tsx` | Later, when email verification or MFA is enabled |
+
+**K6. Develop and preview**
+- `npm run storybook`: preview every page and state (wrong password, validation errors) without Keycloak.
+- `npx keycloakify start-keycloak`: runs a throwaway Keycloak with the theme and hot reload.
+  ⚠️ Our Keycloak already uses port 8080, so run this on another port or stop ours while testing.
+
+**K7. Build and deploy to our Keycloak**
+- `npm run build-keycloak-theme` produces jars in `keycloak-theme/dist_keycloak/`. Use the jar that matches Keycloak 26.
+- Copy it to `infra/keycloak/providers/` and mount it in `docker-compose.yml`:
+  `./infra/keycloak/providers:/opt/keycloak/providers`
+- `docker compose up -d` (recreates Keycloak; data is kept).
+- Realm **human-health-insight** → Realm settings → Themes → **Login theme: `hhi`** → Save. (Never on the `master` realm.)
+
+**K8. Verify**
+- [ ] The login page shows the HHI design at desktop and phone width
+- [ ] Wrong password shows a styled error message
+- [ ] Register → new user gets the `user` role → lands on the dashboard
+- [ ] Forgot password flow renders (email sending can come later)
+- [ ] The app login → Keycloak → back to `/dashboard` flow still works
+- [ ] No external network requests on the login page (DevTools → Network)
+
+**Rough effort:** 1–2 days (setup about half a day; design and pages most of the rest).
+
+---
+
 ## Phase 2 — SmartSpectra challenges (outline, detail after Phase 1)
 
 SmartSpectra (Presage Technologies) measures vitals such as heart rate and breathing rate from a camera feed. Phase 2 plugs it into the authenticated app.

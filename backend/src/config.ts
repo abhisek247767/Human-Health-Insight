@@ -11,4 +11,7 @@ export const config = {
   corsOrigin: required("CORS_ORIGIN"),
   issuer: required("KEYCLOAK_ISSUER"),
   audience: required("KEYCLOAK_AUDIENCE"),
+  // Optional so the REST API still runs without it; /ws/measure reports "not configured".
+  smartspectraApiKey: process.env.SMARTSPECTRA_API_KEY ?? "",
+  measureMaxSeconds: Number(process.env.MEASURE_MAX_SECONDS ?? 60),
 };

@@ -26,28 +26,36 @@ type KeycloakPayload = JWTPayload & {
   realm_access?: { roles?: string[] };
 };
 
+/** Verifies a Keycloak access token (signature, issuer, audience, expiry). Throws if invalid. */
+export async function verifyAccessToken(token: string): Promise<AuthUser> {
+  const { payload } = await jwtVerify(token, JWKS, {
+    issuer: config.issuer,
+    audience: config.audience,
+  });
+  const p = payload as KeycloakPayload;
+  return {
+    sub: p.sub!,
+    username: p.preferred_username,
+    email: p.email,
+    roles: p.realm_access?.roles ?? [],
+  };
+}
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     res.status(401).json({ error: "missing_token" });
     return;
   }
+  let user: AuthUser;
   try {
-    const { payload } = await jwtVerify(header.slice(7), JWKS, {
-      issuer: config.issuer,
-      audience: config.audience,
-    });
-    const p = payload as KeycloakPayload;
-    req.user = {
-      sub: p.sub!,
-      username: p.preferred_username,
-      email: p.email,
-      roles: p.realm_access?.roles ?? [],
-    };
-    next();
+    user = await verifyAccessToken(header.slice(7));
   } catch {
     res.status(401).json({ error: "invalid_token" });
+    return;
   }
+  req.user = user;
+  next();
 }
 
 export const requireRole =

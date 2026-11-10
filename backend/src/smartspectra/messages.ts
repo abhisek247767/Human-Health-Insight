@@ -34,6 +34,8 @@ export function friendlyError(code: number): string {
     case SmartSpectraErrorCode.kNetworkError:
     case SmartSpectraErrorCode.kServerError:
       return "The measurement service is unreachable. Please try again.";
+    case SmartSpectraErrorCode.kInputUnavailable:
+      return "The camera is not available. Close other apps using it and try again.";
     case SmartSpectraErrorCode.kNonMonotonicTimestamp:
     case SmartSpectraErrorCode.kTimestampGap:
       return "The video stream was interrupted. Please try again.";

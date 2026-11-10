@@ -3,10 +3,12 @@ import { WebSocketServer, WebSocket, type RawData } from "ws";
 import jpeg from "jpeg-js";
 import {
   SmartSpectraSDK,
+  CameraSelection,
   FrameTransform,
   PixelFormat,
   breathingMetrics,
   cardioMetrics,
+  type PixelFormatValue,
 } from "@smartspectra/node-sdk";
 // The typed protobuf decoder lives in /messages (the root export returns a raw Buffer).
 import { decodeMetrics } from "@smartspectra/node-sdk/messages";
@@ -14,11 +16,25 @@ import { config } from "../config.js";
 import { verifyAccessToken } from "../middleware/auth.js";
 import { validationMessage, friendlyError } from "./messages.js";
 
+/*
+ * Two input modes (MEASURE_INPUT in .env):
+ *  - "camera"  (default, as in the SmartSpectra Node.js docs): the SDK opens the camera on the
+ *              machine running this backend via useCamera(). Best quality (1280x720 @ 30 fps,
+ *              exposure/white balance locked). Only works when the user sits at that machine.
+ *  - "browser": the browser captures the camera and streams JPEG frames here (useCustomInput +
+ *              sendFrame). Needed when the backend runs on a remote server.
+ */
+
 const AUTH_TIMEOUT_MS = 5_000;
 const MAX_FRAME_BYTES = 1024 * 1024; // 1 MB per message is plenty for a 640px JPEG
+const PREVIEW_MAX_WIDTH = 480; // camera mode: preview frames sent to the browser
+const PREVIEW_INTERVAL_MS = 100; // ~10 fps preview
+const STABLE_HOLD_MS = 3_000; // both readings must stay stable this long before we auto-stop
 
 // SDK native state is process-global → run one measurement at a time.
 let sessionActive = false;
+
+type Stats = { framesIn: number; framesAccepted: number; frameBytes: number };
 
 export function attachMeasureSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws/measure", maxPayload: MAX_FRAME_BYTES });
@@ -50,6 +66,27 @@ function handleConnection(ws: WebSocket) {
   let closed = false;
   let lastTimestampUs = -1;
   let limitTimer: ReturnType<typeof setTimeout> | undefined;
+  let statsTimer: ReturnType<typeof setInterval> | undefined;
+  // Diagnostics only: frame counts per 5 s window (no frame content or readings logged)
+  const stats: Stats = { framesIn: 0, framesAccepted: 0, frameBytes: 0 };
+  // Auto-stop: latest stability of each reading, and when both first became stable
+  let heartStable = false;
+  let breathingStable = false;
+  let bothStableSince: number | null = null;
+
+  function onStability(heart: boolean | null, breathing: boolean | null) {
+    if (heart !== null) heartStable = heart;
+    if (breathing !== null) breathingStable = breathing;
+    if (!(heartStable && breathingStable)) {
+      bothStableSince = null;
+      return;
+    }
+    bothStableSince ??= Date.now();
+    if (Date.now() - bothStableSince >= STABLE_HOLD_MS && authState === "ok" && !closed) {
+      send(ws, { type: "done", reason: "stable" });
+      ws.close(1000, "Readings stable"); // close → cleanup() stops the SDK and releases the camera
+    }
+  }
 
   // The client must authenticate quickly or get disconnected.
   const authTimer = setTimeout(() => {
@@ -58,7 +95,7 @@ function handleConnection(ws: WebSocket) {
 
   ws.on("message", (data: RawData, isBinary: boolean) => {
     if (authState === "ok") {
-      if (isBinary) handleFrame(toBuffer(data));
+      if (isBinary && config.measureInput === "browser") handleFrame(toBuffer(data));
       return;
     }
     if (authState === "checking") return;
@@ -112,10 +149,16 @@ function handleConnection(ws: WebSocket) {
     sessionActive = true;
     ownsLock = true;
 
-    // 4. Start SmartSpectra in "custom input" mode: we push the browser's frames ourselves.
+    // 4. Start SmartSpectra
     try {
-      sdk = createSdk(ws);
-      sdk.useCustomInput(FrameTransform.kNone);
+      sdk = createSdk(ws, stats, onStability);
+      if (config.measureInput === "camera") {
+        // As in the docs' camera quickstart: the SDK opens and drives the camera itself.
+        sdk.useCamera(CameraSelection.default, { width: 1280, height: 720, fps: 30 });
+      } else {
+        // Browser mode: we push the browser's frames ourselves.
+        sdk.useCustomInput(FrameTransform.kNone);
+      }
       sdk.start();
     } catch (err) {
       const e = err as { code?: number; message?: string };
@@ -126,15 +169,21 @@ function handleConnection(ws: WebSocket) {
     }
 
     authState = "ok";
+    statsTimer = setInterval(() => {
+      const fps = (stats.framesIn / 5).toFixed(1);
+      const kb = stats.frameBytes ? ` ~${Math.round(stats.frameBytes / stats.framesIn / 1024)} KB/frame` : "";
+      console.log(`[smartspectra] ${config.measureInput} mode: ${fps} fps, ${stats.framesAccepted}/${stats.framesIn} accepted${kb}`);
+      stats.framesIn = stats.framesAccepted = stats.frameBytes = 0;
+    }, 5_000);
     limitTimer = setTimeout(() => {
       send(ws, { type: "done", reason: "time_limit" });
       ws.close(1000, "Time limit reached");
     }, config.measureMaxSeconds * 1000);
 
-    send(ws, { type: "ready", maxSeconds: config.measureMaxSeconds });
+    send(ws, { type: "ready", maxSeconds: config.measureMaxSeconds, input: config.measureInput });
   }
 
-  // Frame packet = [8 bytes: float64 capture timestamp in µs, little-endian][JPEG bytes]
+  // Browser mode. Frame packet = [8 bytes: float64 capture timestamp in µs, LE][JPEG bytes]
   function handleFrame(buf: Buffer) {
     if (!sdk || buf.length <= 8) return;
 
@@ -154,7 +203,11 @@ function handleConnection(ws: WebSocket) {
       return; // skip a corrupt frame
     }
 
-    sdk.sendFrame(image.data, image.width, image.height, image.width * 4, PixelFormat.kRGBA, timestampUs);
+    stats.framesIn++;
+    stats.frameBytes += buf.length;
+    if (sdk.sendFrame(image.data, image.width, image.height, image.width * 4, PixelFormat.kRGBA, timestampUs)) {
+      stats.framesAccepted++;
+    }
     // Frames live only in memory here — never stored or logged.
   }
 
@@ -163,11 +216,12 @@ function handleConnection(ws: WebSocket) {
     closed = true;
     clearTimeout(authTimer);
     clearTimeout(limitTimer);
+    clearInterval(statsTimer);
 
     const s = sdk;
     sdk = null;
     if (s) {
-      try { await s.stopAsync(); } catch { /* already stopped */ }
+      try { await s.stopAsync(); } catch { /* already stopped */ } // also releases the camera
       try { await s.destroy(); } catch { /* already destroyed */ }
     }
     // Release the lock only after the SDK is fully torn down.
@@ -178,7 +232,11 @@ function handleConnection(ws: WebSocket) {
   }
 }
 
-function createSdk(ws: WebSocket): SmartSpectraSDK {
+function createSdk(
+  ws: WebSocket,
+  stats: Stats,
+  onStability: (heartStable: boolean | null, breathingStable: boolean | null) => void,
+): SmartSpectraSDK {
   const sdk = new SmartSpectraSDK({
     apiKey: config.smartspectraApiKey,
     requestedMetrics: [...breathingMetrics, ...cardioMetrics], // cardio is needed for heart rate
@@ -203,6 +261,8 @@ function createSdk(ws: WebSocket): SmartSpectraSDK {
       breathingRate: breathing?.value ?? null,
       breathingRateStable: breathing?.stable ?? false,
     });
+    // null = no new sample for that reading in this packet → keep the previous state
+    onStability(pulse ? Boolean(pulse.stable) : null, breathing ? Boolean(breathing.stable) : null);
   });
 
   sdk.on("error", (code, message, retryable) => {
@@ -211,5 +271,60 @@ function createSdk(ws: WebSocket): SmartSpectraSDK {
     if (!retryable) ws.close(1011, "Measurement error");
   });
 
+  if (config.measureInput === "camera") {
+    // Count frames the SDK's own camera pushes through the pipeline
+    sdk.on("frameSentThrough", (sent) => {
+      stats.framesIn++;
+      if (sent) stats.framesAccepted++;
+    });
+
+    // Live preview for the browser: downscaled JPEG at ~10 fps (binary WebSocket messages)
+    let lastPreviewAt = 0;
+    sdk.on("videoOutput", (buf, width, height, stride, pixelFormat) => {
+      const now = Date.now();
+      if (now - lastPreviewAt < PREVIEW_INTERVAL_MS || ws.readyState !== WebSocket.OPEN) return;
+      if (ws.bufferedAmount > 256 * 1024) return; // browser not keeping up — skip
+      lastPreviewAt = now;
+      const jpegBytes = encodePreview(buf, width, height, stride, pixelFormat);
+      if (jpegBytes) ws.send(jpegBytes);
+    });
+  }
+
   return sdk;
+}
+
+/** Downscales a raw frame (RGB/BGR/RGBA/BGRA) and encodes it as JPEG for the preview. */
+function encodePreview(
+  buf: Buffer,
+  width: number,
+  height: number,
+  stride: number,
+  pixelFormat: PixelFormatValue,
+): Buffer | null {
+  // [red offset, green offset, blue offset, bytes per pixel]
+  const layout: Partial<Record<PixelFormatValue, [number, number, number, number]>> = {
+    [PixelFormat.kRGBA]: [0, 1, 2, 4],
+    [PixelFormat.kBGRA]: [2, 1, 0, 4],
+    [PixelFormat.kRGB]: [0, 1, 2, 3],
+    [PixelFormat.kBGR]: [2, 1, 0, 3],
+  };
+  const l = layout[pixelFormat];
+  if (!l) return null; // YUV formats: skip preview
+  const [r, g, b, bpp] = l;
+
+  const step = Math.max(1, Math.ceil(width / PREVIEW_MAX_WIDTH));
+  const w = Math.floor(width / step);
+  const h = Math.floor(height / step);
+  const out = Buffer.allocUnsafe(w * h * 4);
+  let o = 0;
+  for (let y = 0; y < h; y++) {
+    let i = y * step * stride;
+    for (let x = 0; x < w; x++, i += step * bpp) {
+      out[o++] = buf[i + r];
+      out[o++] = buf[i + g];
+      out[o++] = buf[i + b];
+      out[o++] = 255;
+    }
+  }
+  return jpeg.encode({ data: out, width: w, height: h }, 70).data;
 }

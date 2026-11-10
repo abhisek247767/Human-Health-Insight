@@ -258,8 +258,10 @@ function createSdk(
       type: "metrics",
       heartRate: pulse?.value ?? null,
       heartRateStable: pulse?.stable ?? false,
+      heartRateConfidence: pulse?.confidence ?? null,
       breathingRate: breathing?.value ?? null,
       breathingRateStable: breathing?.stable ?? false,
+      breathingRateConfidence: breathing?.confidence ?? null,
     });
     // null = no new sample for that reading in this packet → keep the previous state
     onStability(pulse ? Boolean(pulse.stable) : null, breathing ? Boolean(breathing.stable) : null);

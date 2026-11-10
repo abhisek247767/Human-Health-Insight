@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "react-oidc-context";
 import { useApi } from "../api/useApi";
+import {
+  ActivityIcon,
+  BreathIcon,
+  CameraIcon,
+  CheckIcon,
+  FaceScanIcon,
+  HeartIcon,
+  SparkleIcon,
+  StopIcon,
+} from "../components/HealthIcons";
+import "../styles/health.css";
 
 type Phase = "idle" | "connecting" | "measuring" | "done" | "error";
 
@@ -10,22 +21,16 @@ type Insight = {
   summary: string;
   tips: string[];
   source: "ai" | "rules";
+  model: string | null;
   disclaimer: string;
 };
 
 // Fixed notices chosen by the app's rules (not by the AI)
-const URGENCY_NOTICE: Record<Urgency, { text: string; color: string; bg: string }> = {
-  none: { text: "Your readings look within the typical resting range.", color: "#065f46", bg: "#d1fae5" },
-  checkup: {
-    text: "Some readings are outside the typical range. Consider a routine doctor check-up if they stay like this.",
-    color: "#92400e",
-    bg: "#fef3c7",
-  },
-  urgent: {
-    text: "A reading is far outside the typical range. If you have chest pain, dizziness, fainting or trouble breathing, seek medical care now.",
-    color: "#991b1b",
-    bg: "#fee2e2",
-  },
+const URGENCY_NOTICE: Record<Urgency, string> = {
+  none: "Your readings look within the typical resting range.",
+  checkup: "Some readings are outside the typical range. Consider a routine doctor check-up if they stay like this.",
+  urgent:
+    "A reading is far outside the typical range. If you have chest pain, dizziness, fainting or trouble breathing, seek medical care now.",
 };
 
 type Reading = { value: number | null; stable: boolean };
@@ -57,18 +62,15 @@ type Session = {
 };
 
 const WS_URL = import.meta.env.VITE_WS_URL;
+
+/** Console logging for development only — production builds never print health readings. */
+function debugLog(label: string, data: unknown) {
+  if (import.meta.env.DEV) console.log(`%c${label}`, "color:#0f766e;font-weight:bold", data);
+}
 const MAX_FRAME_WIDTH = 640;
 const FPS = 30;
 // Pulse is read from tiny skin-colour changes; heavy JPEG compression erases them.
 const JPEG_QUALITY = 0.95;
-const PREVIEW_STYLE = {
-  width: "100%",
-  aspectRatio: "4 / 3",
-  objectFit: "cover",
-  borderRadius: 12,
-  background: "#0f172a",
-  transform: "scaleX(-1)", // mirror the preview like a selfie camera
-} as const;
 const EMPTY_VITALS: Vitals = {
   heartRate: { value: null, stable: false },
   breathingRate: { value: null, stable: false },
@@ -160,8 +162,10 @@ export default function Measure() {
           breathingRate: vitals.breathingRate.stable ? vitals.breathingRate.value : null,
         }),
       });
+      debugLog(`[LLM insight] source=${result.source}${result.model ? ` model=${result.model}` : ""}`, result);
       setInsight(result);
     } catch (e) {
+      debugLog("[LLM insight] request failed", e);
       setInsightError((e as Error).message);
     } finally {
       setInsightLoading(false);
@@ -228,6 +232,7 @@ export default function Measure() {
       }
 
       const msg = JSON.parse(event.data) as ServerMessage;
+      debugLog(`[SmartSpectra] ${msg.type}`, msg);
       switch (msg.type) {
         case "ready": {
           setMaxSeconds(msg.maxSeconds);
@@ -298,121 +303,219 @@ export default function Measure() {
     vitals.breathingRate.value != null && !vitals.breathingRate.stable ? "breathing rate" : null,
   ].filter(Boolean);
 
-  return (
-    <main style={{ padding: 16, maxWidth: 960, margin: "0 auto" }}>
-      <h2>Measure your vitals</h2>
-      <p style={{ color: "#64748b" }}>Wellness readings only. This is not a medical diagnosis.</p>
+  const showVideo = inputMode === "browser" && running;
+  const showPreview = inputMode === "camera" && running && !!previewUrl;
+  const progress = Math.min(100, (elapsed / maxSeconds) * 100);
+  const emptyText = running
+    ? "Camera is on, getting ready…"
+    : phase === "done"
+      ? "Measurement finished. Camera is off."
+      : "Camera is off";
 
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-        <div>
-          {/* Browser mode: live <video>. Kept mounted (hidden) so the ref always exists. */}
-          <video
-            ref={videoRef}
-            muted
-            playsInline
-            style={{ ...PREVIEW_STYLE, display: inputMode === "camera" ? "none" : "block" }}
-          />
-          {/* Camera mode: preview JPEGs sent by the backend's SmartSpectra camera */}
-          {inputMode === "camera" &&
-            (previewUrl ? (
-              <img src={previewUrl} alt="Camera preview" style={PREVIEW_STYLE} />
-            ) : (
-              <div style={{ ...PREVIEW_STYLE, display: "grid", placeItems: "center", color: "#cbd5e1" }}>
-                {running ? "Camera is on…" : "Camera off"}
+  return (
+    <main className="hi-page">
+      <div className="hi-container">
+        <header className="hi-page-head">
+          <div className="hi-head-icon">
+            <ActivityIcon size={26} />
+          </div>
+          <div>
+            <h1 className="hi-title">Measure your vitals</h1>
+            <p className="hi-subtitle">Wellness readings only. This is not a medical diagnosis.</p>
+          </div>
+        </header>
+
+        <div className="hi-grid-2">
+          {/* ---------- Camera ---------- */}
+          <section className="hi-card">
+            <div className="hi-camera">
+              {/* Browser mode: live <video>. Kept mounted (hidden) so the ref always exists. */}
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                className="hi-camera-media"
+                style={{ display: showVideo ? "block" : "none" }}
+              />
+              {/* Camera mode: preview JPEGs sent by the backend's SmartSpectra camera */}
+              {showPreview && <img src={previewUrl} alt="Camera preview" className="hi-camera-media" />}
+
+              {!showVideo && !showPreview && (
+                <div className="hi-camera-empty">
+                  <FaceScanIcon size={56} />
+                  <span>{emptyText}</span>
+                </div>
+              )}
+
+              {running && (
+                <>
+                  <span className="hi-corner tl" />
+                  <span className="hi-corner tr" />
+                  <span className="hi-corner bl" />
+                  <span className="hi-corner br" />
+                </>
+              )}
+              {phase === "measuring" && (
+                <span className="hi-live">
+                  <span className="hi-live-dot" />
+                  LIVE · {elapsed}s
+                </span>
+              )}
+            </div>
+
+            {phase === "measuring" && (
+              <>
+                <div className="hi-progress" aria-hidden="true">
+                  <div className="hi-progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+                <p className="hi-hint">Stops automatically when both readings are stable (max {maxSeconds}s).</p>
+              </>
+            )}
+
+            {status && (
+              <p className="hi-status" aria-live="polite">
+                <FaceScanIcon size={18} />
+                {status}
+              </p>
+            )}
+          </section>
+
+          {/* ---------- Readings & controls ---------- */}
+          <section className="hi-card hi-stack">
+            <h2 className="hi-card-title" style={{ margin: 0 }}>
+              Your readings
+            </h2>
+            <ReadingCard
+              kind="heart"
+              label="Heart rate"
+              unit="bpm"
+              reading={vitals.heartRate}
+              live={phase === "measuring"}
+            />
+            <ReadingCard
+              kind="breath"
+              label="Breathing rate"
+              unit="breaths/min"
+              reading={vitals.breathingRate}
+              live={phase === "measuring"}
+            />
+
+            {error && (
+              <p role="alert" className="hi-alert">
+                {error}
+              </p>
+            )}
+
+            {running ? (
+              <div className="hi-actions">
+                <button className="hi-btn hi-btn-danger" onClick={stop}>
+                  <StopIcon size={18} />
+                  Stop
+                </button>
               </div>
-            ))}
+            ) : (
+              <>
+                <label className="hi-consent">
+                  <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                  <span>I agree to use my camera. Video is processed live and not stored.</span>
+                </label>
+                <div className="hi-actions">
+                  <button className="hi-btn hi-btn-primary" disabled={!consent} onClick={start}>
+                    <CameraIcon size={18} />
+                    {phase === "idle" ? "Start measurement" : "Measure again"}
+                  </button>
+                  {hasStableReadings && !insight && (
+                    <button className="hi-btn hi-btn-secondary" onClick={getInsights} disabled={insightLoading}>
+                      <SparkleIcon size={18} />
+                      {insightLoading ? "Thinking…" : "Get health tips"}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {!running && hasReadings && !insight && unstableNames.length > 0 && (
+              <p className="hi-note">
+                {hasStableReadings
+                  ? `The ${unstableNames.join(" and ")} did not stabilize, so it won't be used for tips.`
+                  : "Readings did not stabilize. Sit still in good light and measure again for tips."}
+              </p>
+            )}
+            {insightError && (
+              <p role="alert" className="hi-alert">
+                {insightError}
+              </p>
+            )}
+          </section>
         </div>
 
-        <section>
-          <ReadingCard label="Heart rate" reading={vitals.heartRate} unit="bpm" />
-          <ReadingCard label="Breathing rate" reading={vitals.breathingRate} unit="breaths/min" />
-
-          {phase === "measuring" && (
-            <p>
-              {elapsed}s · stops automatically when both readings are stable (max {maxSeconds}s)
-            </p>
-          )}
-          <p aria-live="polite">{status}</p>
-          {error && (
-            <p role="alert" style={{ color: "#b91c1c" }}>
-              {error}
-            </p>
-          )}
-
-          {running ? (
-            <button onClick={stop}>Stop</button>
-          ) : (
-            <>
-              <label style={{ display: "block", margin: "12px 0" }}>
-                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> I agree to
-                use my camera. Video is processed live and not stored.
-              </label>
-              <button disabled={!consent} onClick={start}>
-                {phase === "idle" ? "Start measurement" : "Measure again"}
-              </button>
-              {hasStableReadings && !insight && (
-                <button onClick={getInsights} disabled={insightLoading} style={{ marginLeft: 8 }}>
-                  {insightLoading ? "Thinking…" : "Get health tips"}
-                </button>
-              )}
-            </>
-          )}
-          {!running && hasReadings && !insight && unstableNames.length > 0 && (
-            <p style={{ fontSize: 14, color: "#b45309" }}>
-              {hasStableReadings
-                ? `The ${unstableNames.join(" and ")} did not stabilize, so it won't be used for tips.`
-                : "Readings did not stabilize. Sit still in good light and measure again for tips."}
-            </p>
-          )}
-          {insightError && (
-            <p role="alert" style={{ color: "#b91c1c" }}>
-              {insightError}
-            </p>
-          )}
-        </section>
+        {insight && <InsightCard insight={insight} />}
       </div>
-
-      {insight && <InsightCard insight={insight} />}
     </main>
   );
 }
 
 function InsightCard({ insight }: { insight: Insight }) {
-  const notice = URGENCY_NOTICE[insight.urgency];
   return (
-    <section style={{ marginTop: 24, padding: 16, border: "1px solid #e2e8f0", borderRadius: 12 }}>
-      <h3 style={{ marginTop: 0 }}>Your health tips</h3>
-      <p role="status" style={{ padding: 12, borderRadius: 8, color: notice.color, background: notice.bg, fontWeight: 600 }}>
-        {notice.text}
+    <section className="hi-card">
+      <h2 className="hi-card-title">
+        <SparkleIcon />
+        Your health tips
+      </h2>
+      <p role="status" className={`hi-notice ${insight.urgency}`}>
+        {URGENCY_NOTICE[insight.urgency]}
       </p>
-      <p>{insight.summary}</p>
-      <ul>
+      <p style={{ margin: 0 }}>{insight.summary}</p>
+      <ul className="hi-tips">
         {insight.tips.map((tip) => (
-          <li key={tip} style={{ marginBottom: 6 }}>
-            {tip}
+          <li key={tip}>
+            <CheckIcon size={18} />
+            <span>{tip}</span>
           </li>
         ))}
       </ul>
-      <p style={{ fontSize: 12, color: "#64748b", marginBottom: 0 }}>
+      <p className="hi-disclaimer">
         {insight.disclaimer} {insight.source === "ai" ? "Tips written by AI." : "Built-in tips (AI unavailable)."}
       </p>
     </section>
   );
 }
 
-function ReadingCard({ label, reading, unit }: { label: string; reading: Reading; unit: string }) {
+function ReadingCard({
+  kind,
+  label,
+  unit,
+  reading,
+  live,
+}: {
+  kind: "heart" | "breath";
+  label: string;
+  unit: string;
+  reading: Reading;
+  live: boolean;
+}) {
+  const hasValue = reading.value != null;
   return (
-    <div style={{ padding: 12, border: "1px solid #e2e8f0", borderRadius: 12, marginBottom: 12 }}>
-      <div style={{ color: "#64748b", fontSize: 14 }}>{label}</div>
-      <div style={{ fontSize: 32, fontWeight: 700 }}>
-        {reading.value != null ? Math.round(reading.value) : "—"}{" "}
-        <span style={{ fontSize: 14, fontWeight: 400, color: "#64748b" }}>{unit}</span>
-      </div>
-      {reading.value != null && (
-        <div style={{ fontSize: 12, color: reading.stable ? "#0f766e" : "#b45309" }}>
-          {reading.stable ? "Stable reading" : "Stabilizing…"}
+    <div className={`hi-reading ${kind}${live && hasValue ? " live" : ""}`}>
+      <div className="hi-reading-icon">{kind === "heart" ? <HeartIcon size={26} /> : <BreathIcon size={26} />}</div>
+      <div>
+        <div className="hi-reading-label">{label}</div>
+        <div className="hi-reading-value">
+          {hasValue ? Math.round(reading.value!) : "—"}
+          <span className="hi-unit">{unit}</span>
         </div>
-      )}
+        {hasValue && (
+          <span className={`hi-badge ${reading.stable ? "ok" : "warn"}`}>
+            {reading.stable ? (
+              <>
+                <CheckIcon size={12} /> Stable reading
+              </>
+            ) : (
+              "Stabilizing…"
+            )}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
